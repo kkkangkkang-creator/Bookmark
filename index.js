@@ -395,6 +395,44 @@ function makeBookmark(info) {
     };
 }
 
+// ---------------------------------------------------------------- whole message
+const squash = (t) => String(t || '').replace(/[*_~`#>\[\]()\s"“”'‘’]/g, '');
+
+async function saveWholeMessage(mesEl) {
+    const mesId = Number(mesEl?.getAttribute('mesid'));
+    const msg = ctx().chat?.[mesId];
+    if (!msg || isNaN(mesId)) return;
+    const shown = (mesEl.querySelector('.mes_text')?.innerText || '').trim();
+    const raw = String(msg.mes || '').trim();
+    const text = shown || raw;
+    if (!text) return;
+    try { await loadDb(); } catch { toast('error', '북마크 파일을 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.'); return; }
+    const ci = currentChatInfo();
+    if (ci && db.items.some(b => b.whole && b.chatId === ci.chatId && b.sendDate && b.sendDate === msg.send_date && b.mesId === mesId)) {
+        toast('info', '이미 저장한 메시지예요'); return;
+    }
+    const b = makeBookmark({ text, source: 'chat', mesId, offset: 0, para: null });
+    if (!b) { toast('warning', '채팅 정보를 찾지 못했어요.'); return; }
+    b.whole = true;
+    // translated message: attach the other side automatically (whole message = exact 1:1)
+    const other = shown && raw && squash(shown) !== squash(raw) ? raw : '';
+    if (other) {
+        const kind = pairKind(b, { text: other, source: 'chat' });
+        if (kind !== '연결') b.pair = { text: other, kind, para: null, mesId };
+    }
+    db.items.push(b);
+    lastSavedId = b.id;
+    touch(b);
+    toast('success', b.pair ? `메시지 전체를 저장했어요 (${b.pair.kind} 포함)` : '메시지 전체를 저장했어요');
+    if (panelOpen) render();
+}
+
+function mountMessageButton() {
+    const html = '<div title="메시지 전체 북마크" class="mes_button stbm-mes-btn fa-regular fa-bookmark"></div>';
+    const targets = [document.querySelector('#message_template .extraMesButtons'), ...document.querySelectorAll('#chat .mes .extraMesButtons')];
+    for (const t of targets) if (t && !t.querySelector('.stbm-mes-btn')) t.insertAdjacentHTML('afterbegin', html);
+}
+
 // ---------------------------------------------------------------- link mode bar
 function setLinkMode(id) {
     linkTargetId = id;
@@ -564,7 +602,7 @@ function itemHtml(b, s) {
         ? `<span class="stbm-menu"><button type="button" data-a="copy">복사</button><button type="button" data-a="memo">메모</button><button type="button" data-a="link">연결</button><button type="button" data-a="card">카드</button></span>`
         : '';
     return `<article class="stbm-item" data-id="${esc(b.id)}">
-      <div class="stbm-meta"><span class="stbm-name">${esc(b.speaker || b.ownerName)}</span><span>#${b.mesId ?? '-'}</span><span>${fmtTime(b.createdAt)}</span>${missing ? '<span class="stbm-gone" title="원본 메시지가 없어요">*</span>' : ''}
+      <div class="stbm-meta"><span class="stbm-name">${esc(b.speaker || b.ownerName)}</span><span>#${b.mesId ?? '-'}${b.whole ? ' · 전문' : ''}</span><span>${fmtTime(b.createdAt)}</span>${missing ? '<span class="stbm-gone" title="원본 메시지가 없어요">*</span>' : ''}
         <span class="stbm-tools">${missing ? '' : `<button type="button" class="stbm-ic" data-a="go" title="${isCur ? '메시지로 이동' : '채팅 전환'}" aria-label="${isCur ? '메시지로 이동' : '채팅 전환'}">↗</button>`}<button type="button" class="stbm-ic" data-a="menu" aria-label="더보기" aria-expanded="${ui.menu === b.id}">⋯</button><button type="button" class="stbm-ic" data-a="del" aria-label="삭제">×</button>${menu}</span></div>
       <p class="stbm-quote" data-a="toggle">${quote}</p>${folds}${edit}
     </article>`;
@@ -810,11 +848,16 @@ async function drawCard(b) {
         const need = lines.length * size * 1.7 + (pair ? 48 + pLines.length * pSize * 1.6 : 0);
         if (need <= avail) break;
     }
-    const textH = lines.length * size * 1.7 + (pair ? 48 + pLines.length * pSize * 1.6 : 0);
+    const clip = (arr, n) => { if (arr.length <= n) return arr; const out = arr.slice(0, Math.max(1, n)); out[out.length - 1] = out[out.length - 1].replace(/.?$/, '…'); return out; };
+    const mainMax = Math.floor((pair ? avail * 0.7 : avail) / (size * 1.7));
+    lines = clip(lines, mainMax);
+    if (pair) pLines = clip(pLines, Math.floor((avail - lines.length * size * 1.7 - 48) / (pSize * 1.6)));
+    if (pair && pLines.length && (avail - lines.length * size * 1.7 - 48) < pSize * 1.6) pLines = [];
+    const textH = lines.length * size * 1.7 + (pair && pLines.length ? 48 + pLines.length * pSize * 1.6 : 0);
     let y = Math.max(220, 200 + (H - 200 - 220 - textH) / 2) + size;
     g.fillStyle = '#161616'; g.font = `${size}px ${f}`;
     for (const l of lines) { if (y > H - 230) break; g.fillText(l, M, y); y += size * 1.7; }
-    if (pair) {
+    if (pair && pLines.length) {
         y += 48 - size * 0.7;
         g.fillStyle = '#5C5C58'; g.font = `${pSize}px ${f}`;
         for (const l of pLines) { if (y > H - 230) break; g.fillText(l, M, y); y += pSize * 1.6; }
@@ -907,6 +950,10 @@ function mountEntries() {
     const { eventSource, event_types } = ctx();
 
     document.addEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest?.('.stbm-mes-btn');
+        if (btn) { e.stopPropagation(); saveWholeMessage(btn.closest('.mes')); }
+    }, true);
     document.addEventListener('pointerdown', (e) => {
         const mes = e.target.closest?.('#chat .mes');
         if (mes) lastTappedMes = Number(mes.getAttribute('mesid'));
@@ -921,11 +968,13 @@ function mountEntries() {
 
     eventSource.on(event_types.APP_READY, () => {
         mountEntries();
+        mountMessageButton();
         loadDb().then(refreshLostFlags).catch(() => { /* retried on open */ });
     });
     eventSource.on(event_types.CHAT_CHANGED, () => {
         hideSelPop();
         mountEntries();
+        mountMessageButton();
         if (db) refreshLostFlags();
         if (panelOpen && !ui.editing) render();
     });
@@ -936,5 +985,5 @@ function mountEntries() {
     eventSource.on(event_types.GROUP_CHAT_DELETED, markChatGone);
 
     // in case APP_READY already fired before this script loaded
-    setTimeout(mountEntries, 1500);
+    setTimeout(() => { mountEntries(); mountMessageButton(); }, 1500);
 })();
