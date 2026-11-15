@@ -1,0 +1,12 @@
+{
+    "display_name": "Bookmark",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "kkkangkkang-creator",
+    "version": "0.1.0",
+    "homePage": "https://github.com/kkkangkkang-creator/Bookmark",
+    "auto_update": true
+}
