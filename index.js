@@ -127,6 +127,7 @@ function mergeDb(a, b) {
         if (deleted[it.id]) continue;
         const cur = map.get(it.id);
         if (!cur || (it.updatedAt || 0) > (cur.updatedAt || 0)) map.set(it.id, it);
+        if (cur && (cur.gone || it.gone)) map.get(it.id).gone = true;
     }
     return { version: 1, items: [...map.values()], deleted };
 }
@@ -207,7 +208,7 @@ function refreshLostFlags() {
     for (const b of db.items) {
         if (b.chatId !== id) continue;
         const lost = locate(b) < 0;
-        if (!!b.lost !== lost) { b.lost = lost; b.updatedAt = Date.now(); changed = true; }
+        if (!!b.lost !== lost) { b.lost = lost; changed = true; }
     }
     if (changed) scheduleSave(2000);
 }
@@ -288,7 +289,7 @@ function linkCandidate(info) {
     if (linkTargetId) return db?.items.find(x => x.id === linkTargetId) || null;
     if (!lastSavedId || !db) return null;
     const b = db.items.find(x => x.id === lastSavedId);
-    if (!b || b.pair || b.chatId !== curChatId() || b.mesId !== info.mesId || b.source === info.source) return null;
+    if (!b || b.pair || b.chatId !== curChatId() || b.mesId !== info.mesId || b.text === info.text) return null;
     return b;
 }
 
@@ -302,7 +303,7 @@ function showSelPop(info) {
     else html = `<button data-a="save">＋ 저장</button><button data-a="memo">✎ 메모</button>${cand ? '<button data-a="link">↳ 연결</button>' : ''}`;
     pop.innerHTML = html;
     // inside the translator bubble, mount into it so its outside-click handler doesn't close the bubble
-    const host = info.source === 'bubble' ? document.getElementById(BUBBLE_ID) : document.body;
+    const host = (info.source === 'bubble' && document.getElementById(BUBBLE_ID)) || document.body;
     if (pop.parentElement !== host) host.appendChild(pop);
     pop.hidden = false;
     const touchDev = matchMedia('(pointer: coarse)').matches;
@@ -329,7 +330,7 @@ async function onSelPopClick(e) {
         if (!target) return;
         target.pair = {
             text: info.text,
-            kind: info.source === 'bubble' ? '원문' : (target.source === 'bubble' ? '번역' : '연결'),
+            kind: pairKind(target, info),
             para: info.para ?? null,
             mesId: info.mesId,
         };
@@ -349,6 +350,20 @@ async function onSelPopClick(e) {
     toast('success', '북마크에 저장했어요');
     if (a === 'memo') { ui.editing = b.id; ui.open.add(b.id); if (ui.tab === 'set') ui.tab = 'all'; openPanel(); }
     else if (panelOpen) render();
+}
+
+// Which side is the attached text? Bubble = original. Otherwise guess by Hangul ratio.
+function hangulRatio(t) {
+    const letters = String(t).match(/[\p{L}]/gu) || [];
+    if (!letters.length) return 0;
+    return letters.filter(ch => /[\uAC00-\uD7A3\u3131-\u318E]/.test(ch)).length / letters.length;
+}
+function pairKind(target, info) {
+    if (info.source === 'bubble') return '원문';
+    if (target.source === 'bubble') return '번역';
+    const a = hangulRatio(target.text), b = hangulRatio(info.text);
+    if (Math.abs(a - b) < 0.2) return '연결';
+    return b < a ? '원문' : '번역';
 }
 
 function makeBookmark(info) {
@@ -466,6 +481,7 @@ async function openPanel() {
     render();
 }
 function closePanel() {
+    if (closeDialog) closeDialog();
     panelOpen = false;
     ui.menu = null;
     document.body.classList.remove('stbm-open');
@@ -660,22 +676,28 @@ async function copyText(t) {
 }
 
 // ---------------------------------------------------------------- dialog (light, text buttons)
+let closeDialog = null;
 function dialog(innerHtml) {
-    document.getElementById('stbm-dialog')?.remove();
+    if (closeDialog) closeDialog();
     const wrap = document.createElement('div');
     wrap.id = 'stbm-dialog';
     wrap.innerHTML = `<div class="stbm-dlg">${innerHtml}</div>`;
-    document.body.appendChild(wrap);
+    const panel = document.getElementById('stbm-panel');
+    if (panelOpen && panel) panel.appendChild(wrap);
+    else { wrap.classList.add('is-page'); document.body.appendChild(wrap); }
     applyViewVars(wrap);
+    closeDialog = () => { wrap.remove(); closeDialog = null; };
     return wrap;
 }
 function confirmDialog(title, sub, okLabel) {
     return new Promise(resolve => {
         const w = dialog(`<p>${esc(title)}${sub ? `<br><span class="stbm-sub">${esc(sub)}</span>` : ''}</p>
           <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="0">취소</button><button type="button" class="stbm-tx is-strong" data-r="1">${esc(okLabel)}</button></div>`);
+        const done = (v) => { if (w.isConnected) w.remove(); closeDialog = null; resolve(v); };
+        closeDialog = () => done(false);
         w.addEventListener('click', (e) => {
             const r = e.target.closest('[data-r]');
-            if (r || e.target === w) { w.remove(); resolve(r?.dataset.r === '1'); }
+            if (r || e.target === w) done(r?.dataset.r === '1');
         });
     });
 }
@@ -696,6 +718,8 @@ async function ensureRendered(id) {
             btn.click();
         }
         await sleep(120);
+        const after = Number(document.querySelector('#chat .mes')?.getAttribute('mesid'));
+        if (after === first) { await sleep(400); if (Number(document.querySelector('#chat .mes')?.getAttribute('mesid')) === first) return false; }
     }
     return !!document.querySelector(`#chat .mes[mesid="${id}"]`);
 }
@@ -808,7 +832,7 @@ async function showCard(b) {
     w.addEventListener('click', (e) => {
         const r = e.target.closest('[data-r]')?.dataset.r;
         if (r === 'save') cv.toBlob(bl => bl && download(`bookmark-${stamp()}.png`, bl), 'image/png');
-        if (r === 'close' || e.target === w) w.remove();
+        if (r === 'close' || e.target === w) closeDialog?.();
     });
 }
 
@@ -890,7 +914,7 @@ function mountEntries() {
     }, true);
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        if (document.getElementById('stbm-dialog')) document.getElementById('stbm-dialog').remove();
+        if (closeDialog) closeDialog();
         else if (panelOpen) closePanel();
         else if (linkTargetId) setLinkMode(null);
     });
@@ -903,8 +927,11 @@ function mountEntries() {
         hideSelPop();
         mountEntries();
         if (db) refreshLostFlags();
-        if (panelOpen) render();
+        if (panelOpen && !ui.editing) render();
     });
+    let lostTimer = null;
+    const onMessagesChanged = () => { clearTimeout(lostTimer); lostTimer = setTimeout(() => { refreshLostFlags(); if (panelOpen && !ui.editing) render(); }, 500); };
+    for (const ev of ['MESSAGE_DELETED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED']) if (event_types[ev]) eventSource.on(event_types[ev], onMessagesChanged);
     eventSource.on(event_types.CHAT_DELETED, markChatGone);
     eventSource.on(event_types.GROUP_CHAT_DELETED, markChatGone);
 
