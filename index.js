@@ -34,9 +34,9 @@ const ctx = () => SillyTavern.getContext();
 // ---------------------------------------------------------------- settings
 function S() {
     const { extensionSettings } = ctx();
-    if (!extensionSettings[MODULE]) extensionSettings[MODULE] = structuredClone(defaultSettings);
+    if (!extensionSettings[MODULE]) extensionSettings[MODULE] = JSON.parse(JSON.stringify(defaultSettings));
     const s = extensionSettings[MODULE];
-    for (const k of Object.keys(defaultSettings)) if (!Object.hasOwn(s, k)) s[k] = defaultSettings[k];
+    for (const k of Object.keys(defaultSettings)) if (!Object.prototype.hasOwnProperty.call(s, k)) s[k] = defaultSettings[k];
     return s;
 }
 function saveSettings() { ctx().saveSettingsDebounced(); }
@@ -560,7 +560,7 @@ function settingsHtml() {
     return `<div class="stbm-set">
       <h3>기본</h3>
       <div class="stbm-row"><label for="stbm-on">드래그 저장 사용</label><input type="checkbox" class="stbm-chk" id="stbm-on" data-k="enabled" ${s.enabled ? 'checked' : ''}></div>
-      <div class="stbm-row"><label for="stbm-entry">패널 여는 곳</label><select class="stbm-select" id="stbm-entry" data-k="entry">${opt('input', '입력칸 아이콘', s.entry)}${opt('wand', '요술봉 메뉴', s.entry)}${opt('both', '둘 다', s.entry)}</select></div>
+      <div class="stbm-row"><label for="stbm-entry">패널 여는 곳</label><select class="stbm-select" id="stbm-entry" data-k="entry">${opt('input', '전송 버튼 옆', s.entry)}${opt('wand', '요술봉 메뉴', s.entry)}${opt('both', '둘 다', s.entry)}</select></div>
       <h3>보기</h3>
       <div class="stbm-row"><label for="stbm-font">글꼴</label><select class="stbm-select" id="stbm-font" data-k="font">${Object.entries(FONTS).map(([k, f]) => opt(k, f.label, s.font)).join('')}</select></div>
       <div class="stbm-row"><label for="stbm-size">글자 크기</label><span class="stbm-rng"><input type="range" id="stbm-size" data-k="fontSize" min="12" max="24" step="1" value="${s.fontSize}"><span class="stbm-v">${s.fontSize}</span></span></div>
@@ -639,7 +639,7 @@ async function onPanelClick(e) {
             return;
         case 'card': render(); return showCard(b);
         case 'del': {
-            const ok = await confirmDialog('이 북마크를 삭제할까요?', b.text.length > 40 ? b.text.slice(0, 40) + '…' : b.text, '삭제');
+            const ok = await confirmDialog('삭제할까요?', '', '삭제');
             if (!ok) return;
             db.items = db.items.filter(x => x.id !== b.id);
             db.deleted[b.id] = Date.now();
@@ -712,7 +712,7 @@ async function jumpInCurrent(b) {
 
 async function goTo(b) {
     if (b.chatId === curChatId()) { closePanel(); return jumpInCurrent(b); }
-    const ok = await confirmDialog(`${b.ownerName} 채팅으로 전환할까요?`, b.chatId, '전환');
+    const ok = await confirmDialog(`${b.ownerName} 채팅으로 전환할까요?`, '', '전환');
     if (!ok) return;
     const c = ctx();
     try {
@@ -849,7 +849,8 @@ function mountEntries() {
 
     let ib = document.getElementById('stbm-input-btn');
     if (wantInput && !ib) {
-        const host = document.getElementById('leftSendForm') || document.getElementById('rightSendForm');
+        const send = document.getElementById('send_but');
+        const host = send?.parentElement || document.getElementById('rightSendForm');
         if (host) {
             ib = document.createElement('div');
             ib.id = 'stbm-input-btn';
@@ -857,7 +858,7 @@ function mountEntries() {
             ib.title = '북마크';
             ib.tabIndex = 0;
             ib.addEventListener('click', openPanel);
-            host.appendChild(ib);
+            if (send && send.parentElement === host) host.insertBefore(ib, send); else host.appendChild(ib);
         }
     } else if (!wantInput && ib) ib.remove();
 
