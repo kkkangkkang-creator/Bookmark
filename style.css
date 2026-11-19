@@ -183,6 +183,27 @@ body.stbm-open #stbm-panel {
     resize: vertical;
     min-height: 2.6em;
 }
+#stbm-panel textarea.stbm-text-edit {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 2px 0 0;
+    padding: 6px 0;
+    font-family: var(--stbm-read-font);
+    font-size: var(--stbm-read-size);
+    line-height: var(--stbm-read-lh);
+    color: var(--stbm-ink);
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--stbm-rule);
+    border-bottom: 1px solid var(--stbm-ink);
+    border-radius: 0;
+    box-shadow: none;
+    resize: vertical;
+}
+#stbm-panel textarea.stbm-text-edit.is-pair { font-size: calc(var(--stbm-read-size) * .9); color: var(--stbm-ink-2); }
+#stbm-panel .stbm-edit-label { margin-top: 12px; font-size: 12px; color: var(--stbm-ink-3); }
+#stbm-panel .stbm-edit-acts .stbm-sp { flex: 1; }
 #stbm-panel .stbm-edit-acts { display: flex; justify-content: flex-end; gap: 14px; margin-top: 4px; font-size: 12px; }
 
 #stbm-panel .stbm-tx, #stbm-dialog .stbm-tx { color: var(--stbm-ink-2); }

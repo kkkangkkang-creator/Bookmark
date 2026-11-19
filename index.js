@@ -158,7 +158,7 @@ async function saveNow() {
     });
     if (!res.ok) { toast('error', '북마크를 저장하지 못했어요.'); scheduleSave(5000); return; }
     try { localStorage.setItem(LS_MIRROR, json); } catch { /* quota: ignore */ }
-    if (panelOpen && !ui.editing) render();
+    if (panelOpen && !isEditing()) render();
 }
 
 function touch(item) { item.updatedAt = Date.now(); scheduleSave(); }
@@ -449,7 +449,10 @@ function setLinkMode(id) {
 
 // ---------------------------------------------------------------- panel
 let panelOpen = false;
-const ui = { tab: 'all', sort: 'time', owner: null, open: new Set(), editing: null, menu: null, pairOpen: new Set(), noteOpen: new Set() };
+const ui = { tab: 'all', sort: 'time', owner: null, open: new Set(), editing: null, editText: null, menu: null, pairOpen: new Set(), noteOpen: new Set() };
+const isEditing = () => !!(ui.editing || ui.editText);
+// collapse runs of blank lines into one, trim trailing spaces
+const tidy = (t) => String(t).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 
 function ensureFont(key) {
     const f = FONTS[key];
@@ -573,8 +576,8 @@ function render() {
         }
     }
     body.innerHTML = html + '</div>';
-    const ta = body.querySelector('.stbm-note-edit');
-    if (ta) ta.focus();
+    const ta = body.querySelector('.stbm-note-edit, .stbm-text-edit');
+    if (ta) ta.focus({ preventScroll: true });
 }
 
 function seg(key, opts, cur) {
@@ -583,6 +586,7 @@ function seg(key, opts, cur) {
 
 function itemHtml(b, s) {
     const missing = isMissing(b);
+    if (ui.editText === b.id) return editItemHtml(b);
     const full = s.view === 'thread' || ui.open.has(b.id) || b.text.length <= s.cut;
     const quote = full ? esc(b.text) : esc(b.text.slice(0, s.cut)) + '<span class="stbm-more">…</span>';
     const isCur = b.chatId === curChatId();
@@ -599,12 +603,22 @@ function itemHtml(b, s) {
         ? `<textarea class="stbm-note-edit" rows="2" placeholder="메모를 남기세요">${esc(b.note)}</textarea><div class="stbm-edit-acts"><button type="button" class="stbm-tx" data-a="memoCancel">취소</button><button type="button" class="stbm-tx is-strong" data-a="memoSave">저장</button></div>`
         : '';
     const menu = ui.menu === b.id
-        ? `<span class="stbm-menu"><button type="button" data-a="copy">복사</button><button type="button" data-a="memo">메모</button><button type="button" data-a="link">연결</button><button type="button" data-a="card">카드</button></span>`
+        ? `<span class="stbm-menu"><button type="button" data-a="copy">복사</button><button type="button" data-a="edit">수정</button><button type="button" data-a="memo">메모</button><button type="button" data-a="link">연결</button><button type="button" data-a="card">카드</button></span>`
         : '';
     return `<article class="stbm-item" data-id="${esc(b.id)}">
       <div class="stbm-meta"><span class="stbm-name">${esc(b.speaker || b.ownerName)}</span><span>#${b.mesId ?? '-'}${b.whole ? ' · 전문' : ''}</span><span>${fmtTime(b.createdAt)}</span>${missing ? '<span class="stbm-gone" title="원본 메시지가 없어요">*</span>' : ''}
         <span class="stbm-tools">${missing ? '' : `<button type="button" class="stbm-ic" data-a="go" title="${isCur ? '메시지로 이동' : '채팅 전환'}" aria-label="${isCur ? '메시지로 이동' : '채팅 전환'}">↗</button>`}<button type="button" class="stbm-ic" data-a="menu" aria-label="더보기" aria-expanded="${ui.menu === b.id}">⋯</button><button type="button" class="stbm-ic" data-a="del" aria-label="삭제">×</button>${menu}</span></div>
       <p class="stbm-quote" data-a="toggle">${quote}</p>${folds}${edit}
+    </article>`;
+}
+
+function editItemHtml(b) {
+    const rows = (t) => Math.min(14, Math.max(2, String(t).split('\n').length + 1));
+    return `<article class="stbm-item is-editing" data-id="${esc(b.id)}">
+      <div class="stbm-meta"><span class="stbm-name">${esc(b.speaker || b.ownerName)}</span><span>#${b.mesId ?? '-'}${b.whole ? ' · 전문' : ''}</span><span>수정 중</span></div>
+      <textarea class="stbm-text-edit" data-f="text" rows="${rows(b.text)}" aria-label="저장한 글">${esc(b.text)}</textarea>
+      ${b.pair ? `<div class="stbm-edit-label">${esc(b.pair.kind)}</div><textarea class="stbm-text-edit is-pair" data-f="pair" rows="${rows(b.pair.text)}" aria-label="${esc(b.pair.kind)}">${esc(b.pair.text)}</textarea>` : ''}
+      <div class="stbm-edit-acts"><button type="button" class="stbm-tx" data-a="tidy">빈 줄 정리</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-a="editCancel">취소</button><button type="button" class="stbm-tx is-strong" data-a="editSave">저장</button></div>
     </article>`;
 }
 
@@ -678,7 +692,18 @@ async function onPanelClick(e) {
             return;
         case 'pair': ui.pairOpen.has(b.id) ? ui.pairOpen.delete(b.id) : ui.pairOpen.add(b.id); return render();
         case 'note': ui.noteOpen.has(b.id) ? ui.noteOpen.delete(b.id) : ui.noteOpen.add(b.id); return render();
-        case 'memo': ui.editing = b.id; ui.open.add(b.id); return render();
+        case 'memo': ui.editText = null; ui.editing = b.id; ui.open.add(b.id); return render();
+        case 'edit': ui.editing = null; ui.editText = b.id; return render();
+        case 'tidy': item.querySelectorAll('.stbm-text-edit').forEach(t => { t.value = tidy(t.value); }); return;
+        case 'editCancel': ui.editText = null; return render();
+        case 'editSave': {
+            const text = (item.querySelector('[data-f="text"]')?.value || '').trim();
+            if (!text) { toast('warning', '내용이 비어 있어요'); return; }
+            b.text = text;
+            const pt = item.querySelector('[data-f="pair"]');
+            if (pt && b.pair) { const v = pt.value.trim(); if (v) b.pair.text = v; else b.pair = null; }
+            ui.editText = null; touch(b); return render();
+        }
         case 'memoCancel': ui.editing = null; return render();
         case 'memoSave': {
             b.note = (item.querySelector('.stbm-note-edit')?.value || '').trim();
@@ -976,10 +1001,10 @@ function mountEntries() {
         mountEntries();
         mountMessageButton();
         if (db) refreshLostFlags();
-        if (panelOpen && !ui.editing) render();
+        if (panelOpen && !isEditing()) render();
     });
     let lostTimer = null;
-    const onMessagesChanged = () => { clearTimeout(lostTimer); lostTimer = setTimeout(() => { refreshLostFlags(); if (panelOpen && !ui.editing) render(); }, 500); };
+    const onMessagesChanged = () => { clearTimeout(lostTimer); lostTimer = setTimeout(() => { refreshLostFlags(); if (panelOpen && !isEditing()) render(); }, 500); };
     for (const ev of ['MESSAGE_DELETED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED']) if (event_types[ev]) eventSource.on(event_types[ev], onMessagesChanged);
     eventSource.on(event_types.CHAT_DELETED, markChatGone);
     eventSource.on(event_types.GROUP_CHAT_DELETED, markChatGone);
