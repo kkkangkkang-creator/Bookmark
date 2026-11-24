@@ -262,7 +262,7 @@ body.stbm-open #stbm-panel {
 
 /* card: break editor + replacement rules */
 #stbm-dialog .stbm-acts + .stbm-acts { margin-top: 8px; }
-#stbm-dialog [aria-pressed="false"][data-r="repl"] { color: var(--stbm-ink-3); }
+#stbm-dialog [aria-pressed="false"][data-r="rrToggle"] { color: var(--stbm-ink-3); }
 #stbm-dialog .stbm-brk { max-height: 55vh; overflow-y: auto; margin: 4px 0 12px; border-top: 1px solid var(--stbm-rule); border-bottom: 1px solid var(--stbm-rule); }
 #stbm-dialog .stbm-brk-para { padding: 8px 0; font-size: 13px; line-height: 1.5; color: var(--stbm-ink-2); overflow-wrap: anywhere; }
 #stbm-dialog .stbm-brk-gap { display: block; width: 100%; height: 22px; position: relative; font-size: 11px; color: var(--stbm-ink); text-align: center; }
@@ -271,7 +271,8 @@ body.stbm-open #stbm-panel {
 #stbm-dialog .stbm-brk-gap[aria-pressed="true"] { font-weight: 500; }
 #stbm-dialog .stbm-brk-gap:hover::before { border-top-color: var(--stbm-ink-2); }
 #stbm-dialog .stbm-brk-gap span { position: relative; z-index: 1; padding: 0 8px; background: var(--stbm-paper); }
-#stbm-panel .stbm-rr { gap: 8px; }
-#stbm-panel input.stbm-in { flex: 1; min-width: 0; margin: 0; padding: 3px 0; font: inherit; font-size: 13px; color: var(--stbm-ink); background: transparent; border: 0; border-bottom: 1px solid var(--stbm-rule); border-radius: 0; box-shadow: none; }
-#stbm-panel input.stbm-in:focus { border-bottom-color: var(--stbm-ink); outline: none; }
-#stbm-panel .stbm-arrow { color: var(--stbm-ink-3); flex: none; }
+#stbm-dialog .stbm-rr-list { margin: 4px 0 12px; border-top: 1px solid var(--stbm-rule); }
+#stbm-dialog .stbm-rr { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--stbm-rule); }
+#stbm-dialog input.stbm-in { flex: 1; min-width: 0; margin: 0; padding: 3px 0; font: inherit; font-size: 13px; color: var(--stbm-ink); background: transparent; border: 0; border-bottom: 1px solid var(--stbm-rule); border-radius: 0; box-shadow: none; }
+#stbm-dialog input.stbm-in:focus { border-bottom-color: var(--stbm-ink); outline: none; }
+#stbm-dialog .stbm-arrow { color: var(--stbm-ink-3); flex: none; }

@@ -641,9 +641,6 @@ function settingsHtml() {
       <h3>발췌 카드</h3>
       <div class="stbm-row"><label for="stbm-ratio">비율</label><select class="stbm-select" id="stbm-ratio" data-k="cardRatio">${opt('45', '세로 4:5', s.cardRatio)}${opt('11', '정사각 1:1', s.cardRatio)}</select></div>
       <div class="stbm-row"><label for="stbm-cpair">연결된 원문/번역 함께 넣기</label><input type="checkbox" class="stbm-chk" id="stbm-cpair" data-k="cardWithPair" ${s.cardWithPair ? 'checked' : ''}></div>
-      <div class="stbm-row"><span>카드에서만 바꿀 말</span><button type="button" class="stbm-tx" data-a="rrAdd">＋ 추가</button></div>
-      ${(s.cardReplace || []).map((r, k) => `<div class="stbm-row stbm-rr"><input type="text" class="stbm-in" data-rr="${k}" data-rf="from" value="${esc(r.from)}" placeholder="찾을 말" aria-label="찾을 말"><span class="stbm-arrow">→</span><input type="text" class="stbm-in" data-rr="${k}" data-rf="to" value="${esc(r.to)}" placeholder="(비우면 지움)" aria-label="바꿀 말"><button type="button" class="stbm-ic" data-a="rrDel" data-k="${k}" aria-label="삭제">×</button></div>`).join('')}
-      <p class="stbm-fine">저장된 북마크는 그대로 두고, 카드를 만들 때만 바꿔요. 카드 아래 이름에도 적용돼요.</p>
       <h3>백업</h3>
       <div class="stbm-row"><span>북마크 ${db.items.length}개</span><span class="stbm-acts"><button type="button" class="stbm-tx" data-a="export">내보내기</button><button type="button" class="stbm-tx" data-a="import">불러오기</button></span></div>
       <p class="stbm-fine">북마크는 실리태번 사용자 폴더의 files/${DATA_FILE}에 저장돼요. 불러오기는 기존 북마크에 합쳐지고, 같은 북마크는 한 번만 남아요.</p>
@@ -651,12 +648,6 @@ function settingsHtml() {
 }
 
 function onPanelInput(e) {
-    const rr = e.target.dataset?.rr;
-    if (rr != null) {
-        const r = S().cardReplace[Number(rr)];
-        if (r) { r[e.target.dataset.rf] = e.target.value; saveSettings(); }
-        return;
-    }
     const k = e.target.dataset?.k;
     if (!k || e.target.type !== 'range') return;
     const s = S();
@@ -691,8 +682,6 @@ async function onPanelClick(e) {
     if (!a) { if (ui.menu && !e.target.closest('.stbm-tools')) { ui.menu = null; render(); } return; }
     if (a === 'close') return closePanel();
     if (a === 'export') return exportData();
-    if (a === 'rrAdd') { S().cardReplace.push({ from: '', to: '' }); saveSettings(); render(); [...getPanel().querySelectorAll('.stbm-rr input')].at(-2)?.focus(); return; }
-    if (a === 'rrDel') { S().cardReplace.splice(Number(el.dataset.k), 1); saveSettings(); return render(); }
     if (a === 'import') return importData();
     const item = el.closest('.stbm-item');
     const b = item && db.items.find(x => x.id === item.dataset.id);
@@ -1020,7 +1009,8 @@ async function showCard(b) {
     let draft = [];
     const w = dialog('<div class="stbm-card-body"></div>');
     const body = w.querySelector('.stbm-card-body');
-    const hasRules = () => (s.cardReplace || []).some(r => r && r.from);
+    if (!Array.isArray(s.cardReplace)) s.cardReplace = [];
+    const hasRules = () => s.cardReplace.some(r => r && r.from);
 
     const renderView = () => {
         const multi = cards.length > 1;
@@ -1029,7 +1019,7 @@ async function showCard(b) {
           <div class="stbm-acts is-end">${multi ? `<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg">${i + 1} / ${cards.length}</span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button>` : ''}
             <span class="stbm-sp"></span>
             ${splitParas(b.text).length > 1 ? '<button type="button" class="stbm-tx" data-r="split">나누기</button>' : ''}
-            ${hasRules() ? `<button type="button" class="stbm-tx" data-r="repl" aria-pressed="${!!s.cardReplaceOn}">치환 ${s.cardReplaceOn ? '켬' : '끔'}</button>` : ''}
+            <button type="button" class="stbm-tx" data-r="repl">바꿀 말${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
           </div>
           <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '이미지로 저장'}</button></div>`;
         body.querySelector('.stbm-card-wrap').appendChild(cards[i]);
@@ -1048,6 +1038,20 @@ async function showCard(b) {
         body.innerHTML = html;
     };
 
+    // card-only substitutions, shared by all cards (e.g. hide a character name)
+    const renderRepl = () => {
+        const rows = s.cardReplace.length ? s.cardReplace : [];
+        body.innerHTML = `<p class="stbm-sub">카드를 만들 때만 바꿔요. 저장된 북마크는 그대로예요. 바꿀 말을 비우면 지워요.</p>
+          <div class="stbm-rr-list">${rows.map((r, k) => `<div class="stbm-rr"><input type="text" class="stbm-in" data-rr="${k}" data-rf="from" value="${esc(r.from)}" placeholder="찾을 말" aria-label="찾을 말"><span class="stbm-arrow">→</span><input type="text" class="stbm-in" data-rr="${k}" data-rf="to" value="${esc(r.to)}" placeholder="바꿀 말" aria-label="바꿀 말"><button type="button" class="stbm-tx" data-rdel="${k}" aria-label="삭제">×</button></div>`).join('')}</div>
+          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="rrAdd">＋ 추가</button><button type="button" class="stbm-tx" data-r="rrToggle" aria-pressed="${!!s.cardReplaceOn}">${s.cardReplaceOn ? '적용 중' : '꺼짐'}</button><span class="stbm-sp"></span><button type="button" class="stbm-tx is-strong" data-r="rrDone">완료</button></div>`;
+    };
+    w.addEventListener('input', (e) => {
+        const k = e.target.dataset?.rr;
+        if (k == null) return;
+        const r = s.cardReplace[Number(k)];
+        if (r) { r[e.target.dataset.rf] = e.target.value; saveSettings(); }
+    });
+
     const rebuild = async () => { cards = await buildCards(b); renderView(); };
     renderView();
 
@@ -1055,6 +1059,8 @@ async function showCard(b) {
     w.addEventListener('click', async (e) => {
         const gap = e.target.closest('[data-gap]');
         if (gap) { const k = Number(gap.dataset.gap); draft = draft.includes(k) ? draft.filter(x => x !== k) : [...draft, k]; renderSplit(); return; }
+        const del = e.target.closest('[data-rdel]');
+        if (del) { s.cardReplace.splice(Number(del.dataset.rdel), 1); saveSettings(); renderRepl(); return; }
         const r = e.target.closest('[data-r]')?.dataset.r;
         if (r === 'prev' && i > 0) { i--; renderView(); }
         if (r === 'next' && i < cards.length - 1) { i++; renderView(); }
@@ -1064,7 +1070,10 @@ async function showCard(b) {
         if (r === 'auto') { draft = []; renderSplit(); }
         if (r === 'splitCancel') { mode = 'view'; renderView(); }
         if (r === 'splitDone') { mode = 'view'; b.cardBreaks = draft.sort((x, y) => x - y); touch(b); i = 0; await rebuild(); }
-        if (r === 'repl') { s.cardReplaceOn = !s.cardReplaceOn; saveSettings(); await rebuild(); }
+        if (r === 'repl') { mode = 'repl'; if (!s.cardReplace.length) s.cardReplace.push({ from: '', to: '' }); renderRepl(); body.querySelector('.stbm-in')?.focus(); }
+        if (r === 'rrAdd') { s.cardReplace.push({ from: '', to: '' }); renderRepl(); [...body.querySelectorAll('[data-rf="from"]')].pop()?.focus(); }
+        if (r === 'rrToggle') { s.cardReplaceOn = !s.cardReplaceOn; saveSettings(); renderRepl(); }
+        if (r === 'rrDone') { s.cardReplace = s.cardReplace.filter(x => x && x.from); saveSettings(); mode = 'view'; await rebuild(); }
         if (r === 'close' || (e.target === w && mode === 'view')) closeDialog?.();
     });
 }
