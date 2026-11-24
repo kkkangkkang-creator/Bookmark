@@ -278,3 +278,7 @@ body.stbm-open #stbm-panel {
     color: var(--stbm-ink); background: transparent; border: 0; border-top: 1px solid var(--stbm-rule); border-bottom: 1px solid var(--stbm-ink);
     border-radius: 0; box-shadow: none; resize: vertical; max-height: 55vh;
 }
+#stbm-dialog .stbm-cbx { display: inline-flex; align-items: center; gap: 6px; color: var(--stbm-ink-2); cursor: pointer; }
+#stbm-dialog .stbm-cbx input.stbm-chk { width: 24px; height: 14px; }
+#stbm-dialog .stbm-cbx input.stbm-chk::after { width: 8px; height: 8px; }
+#stbm-dialog .stbm-cbx input.stbm-chk:checked::after { left: 12px; }

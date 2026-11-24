@@ -1080,6 +1080,7 @@ async function showCard(b) {
           <div class="stbm-acts is-end">${multi ? `<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg">${i + 1} / ${cards.length}</span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button>` : ''}
             <span class="stbm-sp"></span>
             ${splitParas(b.text).length > 1 ? `<button type="button" class="stbm-tx" data-r="pull" ${canPull() ? '' : 'disabled'}>↑ 앞으로</button><button type="button" class="stbm-tx" data-r="push" ${canPush() ? '' : 'disabled'}>↓ 뒤로</button>${(b.cardBreaks || []).length ? '<button type="button" class="stbm-tx" data-r="reset">초기화</button>' : ''}` : ''}
+            ${b.pair ? `<label class="stbm-cbx"><input type="checkbox" class="stbm-chk" data-r-pair ${s.cardWithPair ? 'checked' : ''}>원문</label>` : ''}
             <button type="button" class="stbm-tx" data-r="repl">치환${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
           </div>
           <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="fdown" aria-label="글자 작게" ${s.cardFont <= CARD.FMIN ? 'disabled' : ''}>가-</button><span class="stbm-pg">${s.cardFont}</span><button type="button" class="stbm-tx" data-r="fup" aria-label="글자 크게" ${s.cardFont >= CARD.FMAX ? 'disabled' : ''}>가+</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '저장'}</button></div>`;
@@ -1092,6 +1093,10 @@ async function showCard(b) {
         body.innerHTML = `<div class="stbm-rr-list">${rows.map((r, k) => `<div class="stbm-rr"><input type="text" class="stbm-in" data-rr="${k}" data-rf="from" value="${esc(r.from)}" placeholder="찾을 말" aria-label="찾을 말"><span class="stbm-arrow">→</span><input type="text" class="stbm-in" data-rr="${k}" data-rf="to" value="${esc(r.to)}" placeholder="바꿀 말" aria-label="바꿀 말"><button type="button" class="stbm-tx" data-rdel="${k}" aria-label="삭제">×</button></div>`).join('')}</div>
           <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="rrAdd">＋ 추가</button><button type="button" class="stbm-tx" data-r="rrToggle" aria-pressed="${!!s.cardReplaceOn}">${s.cardReplaceOn ? '켬' : '끔'}</button><span class="stbm-sp"></span><button type="button" class="stbm-tx is-strong" data-r="rrDone">완료</button></div>`;
     };
+    w.addEventListener('change', async (e) => {
+        if (!e.target.matches?.('[data-r-pair]')) return;
+        s.cardWithPair = e.target.checked; saveSettings(); await rebuild();
+    });
     w.addEventListener('input', (e) => {
         const k = e.target.dataset?.rr;
         if (k == null) return;
