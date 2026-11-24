@@ -837,69 +837,166 @@ function markGone(b, msg) {
 }
 
 // ---------------------------------------------------------------- excerpt card
-function wrapLines(g, text, maxW) {
+// Layout: paragraphs -> lines. Korean-heavy paragraphs are justified, others left-aligned.
+const CARD = { W: 1080, M: 120, TOP: 210, FOOT: 190, MAX: 46, MIN: 36 };
+
+function breakWord(g, word, maxW) {
     const out = [];
-    for (const para of String(text).split('\n')) {
-        let line = '';
-        for (const ch of para) {
-            if (line && g.measureText(line + ch).width > maxW) {
-                const sp = line.lastIndexOf(' ');
-                if (sp > line.length * 0.5) { out.push(line.slice(0, sp)); line = line.slice(sp + 1) + ch; } else { out.push(line); line = ch; }
-            } else line += ch;
-        }
-        out.push(line);
+    let cur = '';
+    for (const ch of word) {
+        if (cur && g.measureText(cur + ch).width > maxW) { out.push(cur); cur = ch; } else cur += ch;
     }
+    if (cur) out.push(cur);
     return out;
 }
 
-async function drawCard(b) {
+// returns [{ text, last }] per line of one paragraph.
+// Korean (justified): break between any characters like book typesetting, so justification only nudges spacing.
+// Latin (left aligned): break between words.
+function wrapPara(g, para, maxW, byChar) {
+    if (byChar) {
+        const lines = [];
+        let line = '';
+        for (const ch of para) {
+            if (line && g.measureText(line + ch).width > maxW) {
+                // keep closing punctuation on the same line instead of starting a new one with it
+                if (/[.,!?。、)\]}"'”’…·:;~]/.test(ch) && g.measureText(line + ch).width <= maxW * 1.02) { line += ch; continue; }
+                lines.push(line.replace(/ +$/, ''));
+                line = ch === ' ' ? '' : ch;
+            } else line += ch;
+        }
+        lines.push(line);
+        return lines.map((t, i) => ({ text: t, last: i === lines.length - 1 }));
+    }
+    const lines = [];
+    let line = '';
+    for (const word of para.split(/ +/)) {
+        if (!word) continue;
+        const test = line ? line + ' ' + word : word;
+        if (g.measureText(test).width <= maxW) { line = test; continue; }
+        if (line) lines.push(line);
+        if (g.measureText(word).width > maxW) {
+            const parts = breakWord(g, word, maxW);
+            line = parts.pop();
+            lines.push(...parts);
+        } else line = word;
+    }
+    lines.push(line);
+    return lines.map((t, i) => ({ text: t, last: i === lines.length - 1 }));
+}
+
+// Build a flat list of rows: { text, last, justify, size, lh, color, gap } (gap = space before the row)
+function layoutCard(g, f, b, size, withPair) {
+    const maxW = CARD.W - CARD.M * 2;
+    const rows = [];
+    const addBlock = (text, sz, color, firstGap) => {
+        g.font = `${sz}px ${f}`;
+        const paras = String(text).replace(/\r/g, '').split(/\n\s*\n/);
+        paras.forEach((p, pi) => {
+            p.split('\n').forEach((ln, li) => {
+                const justify = hangulRatio(ln) >= 0.3;
+                wrapPara(g, ln.trim(), maxW, justify).forEach((r, ri) => rows.push({
+                    ...r, justify, size: sz, lh: sz * 1.7, color, head: ri === 0,
+                    gap: ri === 0 && li === 0 ? (pi === 0 ? firstGap : sz * 0.9) : 0,
+                }));
+            });
+        });
+    };
+    addBlock(b.text, size, '#161616', 0);
+    if (withPair && b.pair) addBlock(b.pair.text, Math.round(size * 0.72), '#5C5C58', size * 1.6);
+    return rows;
+}
+
+function paginate(rows, H) {
+    const avail = H - CARD.TOP - CARD.FOOT - 40;
+    const pages = [[]];
+    let used = 0;
+    rows.forEach((r, idx) => {
+        const gap = pages[pages.length - 1].length ? r.gap : 0;
+        // don't strand a paragraph's first line alone at the bottom of a page
+        const next = rows[idx + 1];
+        const need = r.head && next && !next.head ? r.lh + next.lh : r.lh;
+        if (used + gap + need > avail && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+        const g2 = pages[pages.length - 1].length ? r.gap : 0;
+        pages[pages.length - 1].push({ ...r, gap: g2 });
+        used += g2 + r.lh;
+    });
+    return pages.map(p => ({ rows: p, height: p.reduce((s, r) => s + r.gap + r.lh, 0) }));
+}
+
+function drawRow(g, r, x, y, maxW) {
+    g.font = `${r.size}px ${g.__family}`;
+    g.fillStyle = r.color;
+    const w = g.measureText(r.text).width;
+    const extra = maxW - w;
+    if (!r.justify || r.last || extra <= 0 || extra > maxW * 0.25) { g.fillText(r.text, x, y); return; }
+    const words = r.text.split(' ');
+    if (words.length > 1 && extra / (words.length - 1) < r.size * 0.3) {
+        const gap = extra / (words.length - 1) + g.measureText(' ').width;
+        let cx = x;
+        for (const wd of words) { g.fillText(wd, cx, y); cx += g.measureText(wd).width + gap; }
+        return;
+    }
+    const chars = [...r.text];
+    const step = extra / Math.max(1, chars.length - 1);
+    let cx = x;
+    for (const ch of chars) { g.fillText(ch, cx, y); cx += g.measureText(ch).width + step; }
+}
+
+async function buildCards(b) {
     const s = S();
-    const W = 1080, H = s.cardRatio === '11' ? 1080 : 1350, M = 96;
+    const H = s.cardRatio === '11' ? 1080 : 1350;
     const f = fontStack();
     ensureFont(s.font);
-    try { await Promise.all([document.fonts.load(`46px ${f}`, b.text), document.fonts.load(`500 30px ${f}`, b.speaker || '')]); } catch { /* fallback font */ }
-    const cv = document.createElement('canvas');
-    cv.width = W; cv.height = H;
-    const g = cv.getContext('2d');
-    g.fillStyle = '#FCFCFA'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#161616'; g.fillRect(M, 120, 48, 3);
-    const pair = s.cardWithPair && b.pair ? b.pair.text : '';
-    const avail = H - 220 - 230;
-    let size = 46, lines, pLines = [], pSize;
-    for (; size >= 24; size -= 2) {
-        g.font = `${size}px ${f}`; lines = wrapLines(g, b.text, W - M * 2);
-        pSize = Math.round(size * 0.62);
-        if (pair) { g.font = `${pSize}px ${f}`; pLines = wrapLines(g, pair, W - M * 2); }
-        const need = lines.length * size * 1.7 + (pair ? 48 + pLines.length * pSize * 1.6 : 0);
-        if (need <= avail) break;
+    try { await document.fonts.load(`${CARD.MAX}px ${f}`, b.text.slice(0, 200)); } catch { /* fallback font */ }
+    const probe = document.createElement('canvas').getContext('2d');
+    const withPair = s.cardWithPair && !!b.pair;
+    // biggest size that fits one card; if none, paginate at the minimum size
+    let pages;
+    for (let size = CARD.MAX; size >= CARD.MIN; size -= 2) {
+        pages = paginate(layoutCard(probe, f, b, size, withPair), H);
+        if (pages.length === 1) break;
     }
-    const clip = (arr, n) => { if (arr.length <= n) return arr; const out = arr.slice(0, Math.max(1, n)); out[out.length - 1] = out[out.length - 1].replace(/.?$/, '…'); return out; };
-    const mainMax = Math.floor((pair ? avail * 0.7 : avail) / (size * 1.7));
-    lines = clip(lines, mainMax);
-    if (pair) pLines = clip(pLines, Math.floor((avail - lines.length * size * 1.7 - 48) / (pSize * 1.6)));
-    if (pair && pLines.length && (avail - lines.length * size * 1.7 - 48) < pSize * 1.6) pLines = [];
-    const textH = lines.length * size * 1.7 + (pair && pLines.length ? 48 + pLines.length * pSize * 1.6 : 0);
-    let y = Math.max(220, 200 + (H - 200 - 220 - textH) / 2) + size;
-    g.fillStyle = '#161616'; g.font = `${size}px ${f}`;
-    for (const l of lines) { if (y > H - 230) break; g.fillText(l, M, y); y += size * 1.7; }
-    if (pair && pLines.length) {
-        y += 48 - size * 0.7;
-        g.fillStyle = '#5C5C58'; g.font = `${pSize}px ${f}`;
-        for (const l of pLines) { if (y > H - 230) break; g.fillText(l, M, y); y += pSize * 1.6; }
-    }
-    g.fillStyle = '#E3E3DE'; g.fillRect(M, H - 200, W - M * 2, 1);
-    g.fillStyle = '#161616'; g.font = `500 30px ${f}`; g.fillText(b.speaker || b.ownerName || '', M, H - 140);
-    g.fillStyle = '#9A9A94'; g.font = `26px ${f}`; g.fillText(`#${b.mesId ?? '-'} · ${fmtTime(b.mesTime ?? b.createdAt).slice(0, 10)}`, M, H - 96);
-    return cv;
+    const name = b.speaker || b.ownerName || '';
+    return pages.map((pg, i) => {
+        const cv = document.createElement('canvas');
+        cv.width = CARD.W; cv.height = H;
+        const g = cv.getContext('2d');
+        g.__family = f;
+        g.fillStyle = '#FCFCFA'; g.fillRect(0, 0, CARD.W, H);
+        g.fillStyle = '#161616'; g.fillRect(CARD.M, 120, 48, 3);
+        const area = H - CARD.TOP - CARD.FOOT - 40;
+        // single short card: center vertically; multi-page: top aligned
+        let y = CARD.TOP + (pages.length === 1 ? Math.max(0, (area - pg.height) / 2) : 0);
+        for (const r of pg.rows) { y += r.gap; drawRow(g, r, CARD.M, y + r.size, CARD.W - CARD.M * 2); y += r.lh; }
+        g.fillStyle = '#E3E3DE'; g.fillRect(CARD.M, H - CARD.FOOT, CARD.W - CARD.M * 2, 1);
+        g.fillStyle = '#161616'; g.font = `500 30px ${f}`; g.fillText(name, CARD.M, H - CARD.FOOT + 70);
+        if (pages.length > 1) {
+            g.fillStyle = '#9A9A94'; g.font = `26px ${f}`;
+            const t = `${i + 1} / ${pages.length}`;
+            g.fillText(t, CARD.W - CARD.M - g.measureText(t).width, H - CARD.FOOT + 70);
+        }
+        return cv;
+    });
 }
 
 async function showCard(b) {
-    const cv = await drawCard(b);
-    const w = dialog(`<div class="stbm-card-wrap"></div><div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button><button type="button" class="stbm-tx is-strong" data-r="save">이미지로 저장</button></div>`);
-    w.querySelector('.stbm-card-wrap').appendChild(cv);
-    w.addEventListener('click', (e) => {
+    const cards = await buildCards(b);
+    let i = 0;
+    const multi = cards.length > 1;
+    const w = dialog(`<div class="stbm-card-wrap"></div>
+      <div class="stbm-acts is-end">${multi ? '<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg"></span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button><span class="stbm-sp"></span>' : ''}
+        <button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '이미지로 저장'}</button></div>`);
+    const wrap = w.querySelector('.stbm-card-wrap');
+    const show = () => { wrap.replaceChildren(cards[i]); const pg = w.querySelector('.stbm-pg'); if (pg) pg.textContent = `${i + 1} / ${cards.length}`; };
+    show();
+    const save = (cv, n) => new Promise(res => cv.toBlob(bl => { if (bl) download(`bookmark-${stamp()}${multi ? '-' + n : ''}.png`, bl); res(); }, 'image/png'));
+    w.addEventListener('click', async (e) => {
         const r = e.target.closest('[data-r]')?.dataset.r;
-        if (r === 'save') cv.toBlob(bl => bl && download(`bookmark-${stamp()}.png`, bl), 'image/png');
+        if (r === 'prev' && i > 0) { i--; show(); }
+        if (r === 'next' && i < cards.length - 1) { i++; show(); }
+        if (r === 'one') await save(cards[i], i + 1);
+        if (r === 'all') for (let k = 0; k < cards.length; k++) { await save(cards[k], k + 1); await sleep(400); }
         if (r === 'close' || e.target === w) closeDialog?.();
     });
 }

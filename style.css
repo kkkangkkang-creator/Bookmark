@@ -244,6 +244,10 @@ body.stbm-open #stbm-panel {
 #stbm-dialog p { margin: 0 0 14px; line-height: 1.6; color: var(--stbm-ink); overflow-wrap: anywhere; }
 #stbm-dialog .stbm-sub { color: var(--stbm-ink-3); font-size: 13px; }
 #stbm-dialog .is-end { justify-content: flex-end; font-size: 13px; }
+#stbm-dialog .is-end { align-items: center; flex-wrap: wrap; }
+#stbm-dialog .stbm-sp { flex: 1; }
+#stbm-dialog .stbm-pg { color: var(--stbm-ink-3); font-variant-numeric: tabular-nums; }
+#stbm-dialog [data-r="prev"], #stbm-dialog [data-r="next"] { padding: 0 4px; font-size: 16px; }
 #stbm-dialog canvas { display: block; width: 100%; height: auto; border: 1px solid var(--stbm-rule); margin-bottom: 12px; }
 
 /* ---------- entry button + jump highlight ---------- */
