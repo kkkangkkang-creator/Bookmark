@@ -19,6 +19,7 @@ const defaultSettings = Object.freeze({
     cardWithPair: true,
     cardReplace: [],        // [{ from, to }] applied only when drawing cards
     cardReplaceOn: true,
+    cardFont: 11,           // card text size as seen on a phone (card width ≈ 390 screen px)
     chatGroupOrder: 'new',  // character tab: newest chat first | 'old'
 });
 
@@ -839,7 +840,8 @@ function markGone(b, msg) {
 
 // ---------------------------------------------------------------- excerpt card
 // Layout: paragraphs -> lines. Korean-heavy paragraphs are justified, others left-aligned.
-const CARD = { W: 1080, M: 120, TOP: 210, FOOT: 190, MAX: 46, MIN: 36 };
+const CARD = { W: 1080, M: 96, TOP: 150, FOOT: 150, LH: 1.6, FMIN: 9, FMAX: 16 };
+const cardPx = (screen) => Math.round(screen * CARD.W / 390);
 
 function breakWord(g, word, maxW) {
     const out = [];
@@ -897,7 +899,7 @@ function layoutCard(g, f, b, size, withPair, breaks = []) {
             p.split('\n').forEach((ln, li) => {
                 const justify = hangulRatio(ln) >= 0.3;
                 wrapPara(g, ln.trim(), maxW, justify).forEach((r, ri) => rows.push({
-                    ...r, justify, size: sz, lh: sz * 1.7, color, head: ri === 0,
+                    ...r, justify, size: sz, lh: sz * CARD.LH, color, head: ri === 0,
                     gap: ri === 0 && li === 0 ? (pi === 0 ? firstGap : sz * 0.9) : 0,
                     force: isMain && ri === 0 && li === 0 && pi > 0 && breaks.includes(pi),
                     pstart: isMain && ri === 0 && li === 0, pi: isMain ? pi : null,
@@ -969,15 +971,11 @@ async function buildCards(src) {
     const H = s.cardRatio === '11' ? 1080 : 1350;
     const f = fontStack();
     ensureFont(s.font);
-    try { await document.fonts.load(`${CARD.MAX}px ${f}`, b.text.slice(0, 200)); } catch { /* fallback font */ }
+    const size = cardPx(Math.min(CARD.FMAX, Math.max(CARD.FMIN, Number(s.cardFont) || 11)));
+    try { await document.fonts.load(`${size}px ${f}`, b.text.slice(0, 200)); } catch { /* fallback font */ }
     const probe = document.createElement('canvas').getContext('2d');
     const withPair = s.cardWithPair && !!b.pair;
-    // biggest size where nothing overflows beyond the chosen breaks; else paginate at the minimum size
-    let pages;
-    for (let size = CARD.MAX; size >= CARD.MIN; size -= 2) {
-        pages = paginate(layoutCard(probe, f, b, size, withPair, breaks), H);
-        if (pages.length <= breaks.length + 1) break;
-    }
+    const pages = paginate(layoutCard(probe, f, b, size, withPair, breaks), H);
     const name = b.speaker ?? '';
     return pages.map((pg, i) => {
         const cv = document.createElement('canvas');
@@ -985,17 +983,17 @@ async function buildCards(src) {
         const g = cv.getContext('2d');
         g.__family = f;
         g.fillStyle = '#FCFCFA'; g.fillRect(0, 0, CARD.W, H);
-        g.fillStyle = '#161616'; g.fillRect(CARD.M, 120, 48, 3);
+        g.fillStyle = '#161616'; g.fillRect(CARD.M, 82, 48, 3);
         const area = H - CARD.TOP - CARD.FOOT - 40;
         // single short card: center vertically; multi-page: top aligned
         let y = CARD.TOP + (pages.length === 1 ? Math.max(0, (area - pg.height) / 2) : 0);
         for (const r of pg.rows) { y += r.gap; drawRow(g, r, CARD.M, y + r.size, CARD.W - CARD.M * 2); y += r.lh; }
         g.fillStyle = '#E3E3DE'; g.fillRect(CARD.M, H - CARD.FOOT, CARD.W - CARD.M * 2, 1);
-        g.fillStyle = '#161616'; g.font = `500 30px ${f}`; g.fillText(name, CARD.M, H - CARD.FOOT + 70);
+        g.fillStyle = '#161616'; g.font = `500 30px ${f}`; g.fillText(name, CARD.M, H - CARD.FOOT + 62);
         if (pages.length > 1) {
             g.fillStyle = '#9A9A94'; g.font = `26px ${f}`;
             const t = `${i + 1} / ${pages.length}`;
-            g.fillText(t, CARD.W - CARD.M - g.measureText(t).width, H - CARD.FOOT + 70);
+            g.fillText(t, CARD.W - CARD.M - g.measureText(t).width, H - CARD.FOOT + 62);
         }
         // which main-text paragraphs start on this card (for moving page boundaries)
         cv.stbm = { starts: pg.rows.filter(r => r.pstart).map(r => r.pi), firstStart: pg.rows[0]?.pstart ? pg.rows[0].pi : null };
@@ -1026,7 +1024,7 @@ async function showCard(b) {
             ${splitParas(b.text).length > 1 ? `<button type="button" class="stbm-tx" data-r="pull" ${canPull() ? '' : 'disabled'}>↑ 앞으로</button><button type="button" class="stbm-tx" data-r="push" ${canPush() ? '' : 'disabled'}>↓ 뒤로</button>${(b.cardBreaks || []).length ? '<button type="button" class="stbm-tx" data-r="reset">초기화</button>' : ''}` : ''}
             <button type="button" class="stbm-tx" data-r="repl">치환${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
           </div>
-          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '저장'}</button></div>`;
+          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="fdown" aria-label="글자 작게" ${s.cardFont <= CARD.FMIN ? 'disabled' : ''}>가-</button><span class="stbm-pg">${s.cardFont}</span><button type="button" class="stbm-tx" data-r="fup" aria-label="글자 크게" ${s.cardFont >= CARD.FMAX ? 'disabled' : ''}>가+</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '저장'}</button></div>`;
         body.querySelector('.stbm-card-wrap').appendChild(cards[i]);
     };
 
@@ -1060,6 +1058,10 @@ async function showCard(b) {
             const last = m.starts.filter(pi => pi > 0 && pi !== m.firstStart).pop();
             const merged = n && n.firstStart != null ? (b.cardBreaks || []).filter(k => k !== n.firstStart) : (b.cardBreaks || []);
             await setBreaks([...merged, last]);
+        }
+        if (r === 'fdown' || r === 'fup') {
+            s.cardFont = Math.min(CARD.FMAX, Math.max(CARD.FMIN, (Number(s.cardFont) || 11) + (r === 'fup' ? 1 : -1)));
+            saveSettings(); await rebuild();
         }
         if (r === 'reset') { i = 0; await setBreaks([]); }
         if (r === 'pull' && canPull()) {
