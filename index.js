@@ -568,7 +568,7 @@ function render() {
 
     let html = `<div class="stbm-bar">${bar}</div><div class="stbm-list ${s.view === 'blog' ? 'is-blog' : ''}">`;
     if (!items.length) {
-        html += `<div class="stbm-empty">${ui.tab === 'chat' && !ci ? '열려 있는 채팅이 없어요.' : '아직 북마크가 없어요. 채팅에서 문장을 드래그하면 여기에 쌓입니다.'}</div>`;
+        html += `<div class="stbm-empty">${ui.tab === 'chat' && !ci ? '열려 있는 채팅이 없어요.' : '북마크 없음'}</div>`;
     } else {
         const groupHeads = ui.tab === 'char' && ui.sort === 'msg';
         let lastChat = null;
@@ -629,21 +629,20 @@ function settingsHtml() {
     const opt = (v, l, cur) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${l}</option>`;
     return `<div class="stbm-set">
       <h3>기본</h3>
-      <div class="stbm-row"><label for="stbm-on">드래그 저장 사용</label><input type="checkbox" class="stbm-chk" id="stbm-on" data-k="enabled" ${s.enabled ? 'checked' : ''}></div>
-      <div class="stbm-row"><label for="stbm-entry">패널 여는 곳</label><select class="stbm-select" id="stbm-entry" data-k="entry">${opt('input', '전송 버튼 옆', s.entry)}${opt('wand', '요술봉 메뉴', s.entry)}${opt('both', '둘 다', s.entry)}</select></div>
+      <div class="stbm-row"><label for="stbm-on">드래그 저장</label><input type="checkbox" class="stbm-chk" id="stbm-on" data-k="enabled" ${s.enabled ? 'checked' : ''}></div>
+      <div class="stbm-row"><label for="stbm-entry">버튼 위치</label><select class="stbm-select" id="stbm-entry" data-k="entry">${opt('input', '전송 버튼 옆', s.entry)}${opt('wand', '요술봉 메뉴', s.entry)}${opt('both', '둘 다', s.entry)}</select></div>
       <h3>보기</h3>
       <div class="stbm-row"><label for="stbm-font">글꼴</label><select class="stbm-select" id="stbm-font" data-k="font">${Object.entries(FONTS).map(([k, f]) => opt(k, f.label, s.font)).join('')}</select></div>
       <div class="stbm-row"><label for="stbm-size">글자 크기</label><span class="stbm-rng"><input type="range" id="stbm-size" data-k="fontSize" min="12" max="24" step="1" value="${s.fontSize}"><span class="stbm-v">${s.fontSize}</span></span></div>
       <div class="stbm-row"><label for="stbm-lh">줄간격</label><span class="stbm-rng"><input type="range" id="stbm-lh" data-k="lineHeight" min="1.3" max="2.2" step="0.05" value="${s.lineHeight}"><span class="stbm-v">${Number(s.lineHeight).toFixed(2)}</span></span></div>
-      <div class="stbm-row"><label for="stbm-cut">블로그 보기 미리보기 글자 수</label><span class="stbm-rng"><input type="range" id="stbm-cut" data-k="cut" min="10" max="80" step="5" value="${s.cut}"><span class="stbm-v">${s.cut}</span></span></div>
-      <div class="stbm-row"><label for="stbm-gord">캐릭터 탭 채팅 순서</label><select class="stbm-select" id="stbm-gord" data-k="chatGroupOrder">${opt('new', '최신 채팅 먼저', s.chatGroupOrder)}${opt('old', '오래된 채팅 먼저', s.chatGroupOrder)}</select></div>
+      <div class="stbm-row"><label for="stbm-cut">미리보기 글자 수</label><span class="stbm-rng"><input type="range" id="stbm-cut" data-k="cut" min="10" max="80" step="5" value="${s.cut}"><span class="stbm-v">${s.cut}</span></span></div>
+      <div class="stbm-row"><label for="stbm-gord">채팅 순서</label><select class="stbm-select" id="stbm-gord" data-k="chatGroupOrder">${opt('new', '최신 채팅 먼저', s.chatGroupOrder)}${opt('old', '오래된 채팅 먼저', s.chatGroupOrder)}</select></div>
       <div class="stbm-sample">돌려줄 핑계가 하나쯤 있어야 다음에 또 볼 수 있을 것 같았거든.</div>
       <h3>발췌 카드</h3>
       <div class="stbm-row"><label for="stbm-ratio">비율</label><select class="stbm-select" id="stbm-ratio" data-k="cardRatio">${opt('45', '세로 4:5', s.cardRatio)}${opt('11', '정사각 1:1', s.cardRatio)}</select></div>
-      <div class="stbm-row"><label for="stbm-cpair">연결된 원문/번역 함께 넣기</label><input type="checkbox" class="stbm-chk" id="stbm-cpair" data-k="cardWithPair" ${s.cardWithPair ? 'checked' : ''}></div>
+      <div class="stbm-row"><label for="stbm-cpair">원문 포함</label><input type="checkbox" class="stbm-chk" id="stbm-cpair" data-k="cardWithPair" ${s.cardWithPair ? 'checked' : ''}></div>
       <h3>백업</h3>
       <div class="stbm-row"><span>북마크 ${db.items.length}개</span><span class="stbm-acts"><button type="button" class="stbm-tx" data-a="export">내보내기</button><button type="button" class="stbm-tx" data-a="import">불러오기</button></span></div>
-      <p class="stbm-fine">북마크는 실리태번 사용자 폴더의 files/${DATA_FILE}에 저장돼요. 불러오기는 기존 북마크에 합쳐지고, 같은 북마크는 한 번만 남아요.</p>
     </div>`;
 }
 
@@ -1019,31 +1018,30 @@ async function showCard(b) {
           <div class="stbm-acts is-end">${multi ? `<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg">${i + 1} / ${cards.length}</span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button>` : ''}
             <span class="stbm-sp"></span>
             ${splitParas(b.text).length > 1 ? '<button type="button" class="stbm-tx" data-r="split">나누기</button>' : ''}
-            <button type="button" class="stbm-tx" data-r="repl">바꿀 말${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
+            <button type="button" class="stbm-tx" data-r="repl">치환${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
           </div>
-          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '이미지로 저장'}</button></div>`;
+          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '저장'}</button></div>`;
         body.querySelector('.stbm-card-wrap').appendChild(cards[i]);
     };
 
     // break editor: tap the space between paragraphs to start a new card there
     const renderSplit = () => {
         const paras = splitParas(cardView(b).text);
-        let html = '<p class="stbm-sub">문단 사이를 눌러 다음 장이 시작될 곳을 고르세요. 한 장에 넘치면 그 안에서 자동으로 한 번 더 나뉘어요.</p><div class="stbm-brk">';
+        let html = '<div class="stbm-brk">';
         paras.forEach((p, k) => {
             if (k > 0) html += `<button type="button" class="stbm-brk-gap" data-gap="${k}" aria-pressed="${draft.includes(k)}" aria-label="여기서 다음 장">${draft.includes(k) ? '<span>다음 장</span>' : ''}</button>`;
             const t = p.replace(/\s+/g, ' ').trim();
             html += `<div class="stbm-brk-para">${esc(t.length > 60 ? t.slice(0, 60) + '…' : t)}</div>`;
         });
-        html += '</div><div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="auto">자동으로</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-r="splitCancel">취소</button><button type="button" class="stbm-tx is-strong" data-r="splitDone">완료</button></div>';
+        html += '</div><div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="auto">초기화</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-r="splitCancel">취소</button><button type="button" class="stbm-tx is-strong" data-r="splitDone">완료</button></div>';
         body.innerHTML = html;
     };
 
     // card-only substitutions, shared by all cards (e.g. hide a character name)
     const renderRepl = () => {
         const rows = s.cardReplace.length ? s.cardReplace : [];
-        body.innerHTML = `<p class="stbm-sub">카드를 만들 때만 바꿔요. 저장된 북마크는 그대로예요. 바꿀 말을 비우면 지워요.</p>
-          <div class="stbm-rr-list">${rows.map((r, k) => `<div class="stbm-rr"><input type="text" class="stbm-in" data-rr="${k}" data-rf="from" value="${esc(r.from)}" placeholder="찾을 말" aria-label="찾을 말"><span class="stbm-arrow">→</span><input type="text" class="stbm-in" data-rr="${k}" data-rf="to" value="${esc(r.to)}" placeholder="바꿀 말" aria-label="바꿀 말"><button type="button" class="stbm-tx" data-rdel="${k}" aria-label="삭제">×</button></div>`).join('')}</div>
-          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="rrAdd">＋ 추가</button><button type="button" class="stbm-tx" data-r="rrToggle" aria-pressed="${!!s.cardReplaceOn}">${s.cardReplaceOn ? '적용 중' : '꺼짐'}</button><span class="stbm-sp"></span><button type="button" class="stbm-tx is-strong" data-r="rrDone">완료</button></div>`;
+        body.innerHTML = `<div class="stbm-rr-list">${rows.map((r, k) => `<div class="stbm-rr"><input type="text" class="stbm-in" data-rr="${k}" data-rf="from" value="${esc(r.from)}" placeholder="찾을 말" aria-label="찾을 말"><span class="stbm-arrow">→</span><input type="text" class="stbm-in" data-rr="${k}" data-rf="to" value="${esc(r.to)}" placeholder="바꿀 말" aria-label="바꿀 말"><button type="button" class="stbm-tx" data-rdel="${k}" aria-label="삭제">×</button></div>`).join('')}</div>
+          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="rrAdd">＋ 추가</button><button type="button" class="stbm-tx" data-r="rrToggle" aria-pressed="${!!s.cardReplaceOn}">${s.cardReplaceOn ? '켬' : '끔'}</button><span class="stbm-sp"></span><button type="button" class="stbm-tx is-strong" data-r="rrDone">완료</button></div>`;
     };
     w.addEventListener('input', (e) => {
         const k = e.target.dataset?.rr;
