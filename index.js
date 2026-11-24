@@ -1023,7 +1023,7 @@ async function showCard(b) {
         body.innerHTML = `<div class="stbm-card-wrap"></div>
           <div class="stbm-acts is-end">${multi ? `<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg">${i + 1} / ${cards.length}</span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button>` : ''}
             <span class="stbm-sp"></span>
-            ${splitParas(b.text).length > 1 ? `<button type="button" class="stbm-tx" data-r="pull" ${canPull() ? '' : 'disabled'}>↑ 앞으로</button><button type="button" class="stbm-tx" data-r="push" ${canPush() ? '' : 'disabled'}>↓ 뒤로</button>` : ''}
+            ${splitParas(b.text).length > 1 ? `<button type="button" class="stbm-tx" data-r="pull" ${canPull() ? '' : 'disabled'}>↑ 앞으로</button><button type="button" class="stbm-tx" data-r="push" ${canPush() ? '' : 'disabled'}>↓ 뒤로</button>${(b.cardBreaks || []).length ? '<button type="button" class="stbm-tx" data-r="reset">초기화</button>' : ''}` : ''}
             <button type="button" class="stbm-tx" data-r="repl">치환${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
           </div>
           <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '저장'}</button></div>`;
@@ -1061,6 +1061,7 @@ async function showCard(b) {
             const merged = n && n.firstStart != null ? (b.cardBreaks || []).filter(k => k !== n.firstStart) : (b.cardBreaks || []);
             await setBreaks([...merged, last]);
         }
+        if (r === 'reset') { i = 0; await setBreaks([]); }
         if (r === 'pull' && canPull()) {
             const n = cards[i + 1].stbm;
             const rest = n.starts.find(pi => pi > n.firstStart);
