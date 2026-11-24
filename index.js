@@ -17,6 +17,8 @@ const defaultSettings = Object.freeze({
     cut: 20,
     cardRatio: '45',        // '45' | '11'
     cardWithPair: true,
+    cardReplace: [],        // [{ from, to }] applied only when drawing cards
+    cardReplaceOn: true,
     chatGroupOrder: 'new',  // character tab: newest chat first | 'old'
 });
 
@@ -36,7 +38,7 @@ function S() {
     const { extensionSettings } = ctx();
     if (!extensionSettings[MODULE]) extensionSettings[MODULE] = JSON.parse(JSON.stringify(defaultSettings));
     const s = extensionSettings[MODULE];
-    for (const k of Object.keys(defaultSettings)) if (!Object.prototype.hasOwnProperty.call(s, k)) s[k] = defaultSettings[k];
+    for (const k of Object.keys(defaultSettings)) if (!Object.prototype.hasOwnProperty.call(s, k)) s[k] = JSON.parse(JSON.stringify(defaultSettings[k]));
     return s;
 }
 function saveSettings() { ctx().saveSettingsDebounced(); }
@@ -639,6 +641,9 @@ function settingsHtml() {
       <h3>발췌 카드</h3>
       <div class="stbm-row"><label for="stbm-ratio">비율</label><select class="stbm-select" id="stbm-ratio" data-k="cardRatio">${opt('45', '세로 4:5', s.cardRatio)}${opt('11', '정사각 1:1', s.cardRatio)}</select></div>
       <div class="stbm-row"><label for="stbm-cpair">연결된 원문/번역 함께 넣기</label><input type="checkbox" class="stbm-chk" id="stbm-cpair" data-k="cardWithPair" ${s.cardWithPair ? 'checked' : ''}></div>
+      <div class="stbm-row"><span>카드에서만 바꿀 말</span><button type="button" class="stbm-tx" data-a="rrAdd">＋ 추가</button></div>
+      ${(s.cardReplace || []).map((r, k) => `<div class="stbm-row stbm-rr"><input type="text" class="stbm-in" data-rr="${k}" data-rf="from" value="${esc(r.from)}" placeholder="찾을 말" aria-label="찾을 말"><span class="stbm-arrow">→</span><input type="text" class="stbm-in" data-rr="${k}" data-rf="to" value="${esc(r.to)}" placeholder="(비우면 지움)" aria-label="바꿀 말"><button type="button" class="stbm-ic" data-a="rrDel" data-k="${k}" aria-label="삭제">×</button></div>`).join('')}
+      <p class="stbm-fine">저장된 북마크는 그대로 두고, 카드를 만들 때만 바꿔요. 카드 아래 이름에도 적용돼요.</p>
       <h3>백업</h3>
       <div class="stbm-row"><span>북마크 ${db.items.length}개</span><span class="stbm-acts"><button type="button" class="stbm-tx" data-a="export">내보내기</button><button type="button" class="stbm-tx" data-a="import">불러오기</button></span></div>
       <p class="stbm-fine">북마크는 실리태번 사용자 폴더의 files/${DATA_FILE}에 저장돼요. 불러오기는 기존 북마크에 합쳐지고, 같은 북마크는 한 번만 남아요.</p>
@@ -646,6 +651,12 @@ function settingsHtml() {
 }
 
 function onPanelInput(e) {
+    const rr = e.target.dataset?.rr;
+    if (rr != null) {
+        const r = S().cardReplace[Number(rr)];
+        if (r) { r[e.target.dataset.rf] = e.target.value; saveSettings(); }
+        return;
+    }
     const k = e.target.dataset?.k;
     if (!k || e.target.type !== 'range') return;
     const s = S();
@@ -680,6 +691,8 @@ async function onPanelClick(e) {
     if (!a) { if (ui.menu && !e.target.closest('.stbm-tools')) { ui.menu = null; render(); } return; }
     if (a === 'close') return closePanel();
     if (a === 'export') return exportData();
+    if (a === 'rrAdd') { S().cardReplace.push({ from: '', to: '' }); saveSettings(); render(); [...getPanel().querySelectorAll('.stbm-rr input')].at(-2)?.focus(); return; }
+    if (a === 'rrDel') { S().cardReplace.splice(Number(el.dataset.k), 1); saveSettings(); return render(); }
     if (a === 'import') return importData();
     const item = el.closest('.stbm-item');
     const b = item && db.items.find(x => x.id === item.dataset.id);
@@ -886,10 +899,10 @@ function wrapPara(g, para, maxW, byChar) {
 }
 
 // Build a flat list of rows: { text, last, justify, size, lh, color, gap } (gap = space before the row)
-function layoutCard(g, f, b, size, withPair) {
+function layoutCard(g, f, b, size, withPair, breaks = []) {
     const maxW = CARD.W - CARD.M * 2;
     const rows = [];
-    const addBlock = (text, sz, color, firstGap) => {
+    const addBlock = (text, sz, color, firstGap, isMain) => {
         g.font = `${sz}px ${f}`;
         const paras = String(text).replace(/\r/g, '').split(/\n\s*\n/);
         paras.forEach((p, pi) => {
@@ -898,12 +911,13 @@ function layoutCard(g, f, b, size, withPair) {
                 wrapPara(g, ln.trim(), maxW, justify).forEach((r, ri) => rows.push({
                     ...r, justify, size: sz, lh: sz * 1.7, color, head: ri === 0,
                     gap: ri === 0 && li === 0 ? (pi === 0 ? firstGap : sz * 0.9) : 0,
+                    force: isMain && ri === 0 && li === 0 && pi > 0 && breaks.includes(pi),
                 }));
             });
         });
     };
-    addBlock(b.text, size, '#161616', 0);
-    if (withPair && b.pair) addBlock(b.pair.text, Math.round(size * 0.72), '#5C5C58', size * 1.6);
+    addBlock(b.text, size, '#161616', 0, true);
+    if (withPair && b.pair) addBlock(b.pair.text, Math.round(size * 0.72), '#5C5C58', size * 1.6, false);
     return rows;
 }
 
@@ -916,7 +930,7 @@ function paginate(rows, H) {
         // don't strand a paragraph's first line alone at the bottom of a page
         const next = rows[idx + 1];
         const need = r.head && next && !next.head ? r.lh + next.lh : r.lh;
-        if (used + gap + need > avail && pages[pages.length - 1].length) { pages.push([]); used = 0; }
+        if ((r.force || used + gap + need > avail) && pages[pages.length - 1].length) { pages.push([]); used = 0; }
         const g2 = pages[pages.length - 1].length ? r.gap : 0;
         pages[pages.length - 1].push({ ...r, gap: g2 });
         used += g2 + r.lh;
@@ -943,21 +957,39 @@ function drawRow(g, r, x, y, maxW) {
     for (const ch of chars) { g.fillText(ch, cx, y); cx += g.measureText(ch).width + step; }
 }
 
-async function buildCards(b) {
+const splitParas = (t) => String(t).replace(/\r/g, '').split(/\n\s*\n/);
+
+function replaceAll(t, rules) {
+    let out = String(t ?? '');
+    for (const r of rules) out = out.split(r.from).join(r.to);
+    return out;
+}
+// Card-only substitutions (e.g. hide a character name). Longer words first so "Vaeld Lord" beats "Vaeld".
+function cardView(b) {
     const s = S();
+    const rules = s.cardReplaceOn ? (s.cardReplace || []).filter(r => r && r.from).sort((x, y) => y.from.length - x.from.length) : [];
+    if (!rules.length) return b;
+    return { ...b, text: replaceAll(b.text, rules), speaker: replaceAll(b.speaker || b.ownerName || '', rules), ownerName: '', pair: b.pair ? { ...b.pair, text: replaceAll(b.pair.text, rules) } : null };
+}
+
+async function buildCards(src) {
+    const s = S();
+    const b = cardView(src);
+    const nParas = splitParas(b.text).length;
+    const breaks = (src.cardBreaks || []).filter(k => k > 0 && k < nParas);
     const H = s.cardRatio === '11' ? 1080 : 1350;
     const f = fontStack();
     ensureFont(s.font);
     try { await document.fonts.load(`${CARD.MAX}px ${f}`, b.text.slice(0, 200)); } catch { /* fallback font */ }
     const probe = document.createElement('canvas').getContext('2d');
     const withPair = s.cardWithPair && !!b.pair;
-    // biggest size that fits one card; if none, paginate at the minimum size
+    // biggest size where nothing overflows beyond the chosen breaks; else paginate at the minimum size
     let pages;
     for (let size = CARD.MAX; size >= CARD.MIN; size -= 2) {
-        pages = paginate(layoutCard(probe, f, b, size, withPair), H);
-        if (pages.length === 1) break;
+        pages = paginate(layoutCard(probe, f, b, size, withPair, breaks), H);
+        if (pages.length <= breaks.length + 1) break;
     }
-    const name = b.speaker || b.ownerName || '';
+    const name = b.speaker ?? '';
     return pages.map((pg, i) => {
         const cv = document.createElement('canvas');
         cv.width = CARD.W; cv.height = H;
@@ -981,23 +1013,59 @@ async function buildCards(b) {
 }
 
 async function showCard(b) {
-    const cards = await buildCards(b);
+    const s = S();
+    let cards = await buildCards(b);
     let i = 0;
-    const multi = cards.length > 1;
-    const w = dialog(`<div class="stbm-card-wrap"></div>
-      <div class="stbm-acts is-end">${multi ? '<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg"></span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button><span class="stbm-sp"></span>' : ''}
-        <button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '이미지로 저장'}</button></div>`);
-    const wrap = w.querySelector('.stbm-card-wrap');
-    const show = () => { wrap.replaceChildren(cards[i]); const pg = w.querySelector('.stbm-pg'); if (pg) pg.textContent = `${i + 1} / ${cards.length}`; };
-    show();
-    const save = (cv, n) => new Promise(res => cv.toBlob(bl => { if (bl) download(`bookmark-${stamp()}${multi ? '-' + n : ''}.png`, bl); res(); }, 'image/png'));
+    let mode = 'view';
+    let draft = [];
+    const w = dialog('<div class="stbm-card-body"></div>');
+    const body = w.querySelector('.stbm-card-body');
+    const hasRules = () => (s.cardReplace || []).some(r => r && r.from);
+
+    const renderView = () => {
+        const multi = cards.length > 1;
+        i = Math.min(i, cards.length - 1);
+        body.innerHTML = `<div class="stbm-card-wrap"></div>
+          <div class="stbm-acts is-end">${multi ? `<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg">${i + 1} / ${cards.length}</span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button>` : ''}
+            <span class="stbm-sp"></span>
+            ${splitParas(b.text).length > 1 ? '<button type="button" class="stbm-tx" data-r="split">나누기</button>' : ''}
+            ${hasRules() ? `<button type="button" class="stbm-tx" data-r="repl" aria-pressed="${!!s.cardReplaceOn}">치환 ${s.cardReplaceOn ? '켬' : '끔'}</button>` : ''}
+          </div>
+          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '이미지로 저장'}</button></div>`;
+        body.querySelector('.stbm-card-wrap').appendChild(cards[i]);
+    };
+
+    // break editor: tap the space between paragraphs to start a new card there
+    const renderSplit = () => {
+        const paras = splitParas(cardView(b).text);
+        let html = '<p class="stbm-sub">문단 사이를 눌러 다음 장이 시작될 곳을 고르세요. 한 장에 넘치면 그 안에서 자동으로 한 번 더 나뉘어요.</p><div class="stbm-brk">';
+        paras.forEach((p, k) => {
+            if (k > 0) html += `<button type="button" class="stbm-brk-gap" data-gap="${k}" aria-pressed="${draft.includes(k)}" aria-label="여기서 다음 장">${draft.includes(k) ? '<span>다음 장</span>' : ''}</button>`;
+            const t = p.replace(/\s+/g, ' ').trim();
+            html += `<div class="stbm-brk-para">${esc(t.length > 60 ? t.slice(0, 60) + '…' : t)}</div>`;
+        });
+        html += '</div><div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="auto">자동으로</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-r="splitCancel">취소</button><button type="button" class="stbm-tx is-strong" data-r="splitDone">완료</button></div>';
+        body.innerHTML = html;
+    };
+
+    const rebuild = async () => { cards = await buildCards(b); renderView(); };
+    renderView();
+
+    const save = (cv, n, multi) => new Promise(res => cv.toBlob(bl => { if (bl) download(`bookmark-${stamp()}${multi ? '-' + n : ''}.png`, bl); res(); }, 'image/png'));
     w.addEventListener('click', async (e) => {
+        const gap = e.target.closest('[data-gap]');
+        if (gap) { const k = Number(gap.dataset.gap); draft = draft.includes(k) ? draft.filter(x => x !== k) : [...draft, k]; renderSplit(); return; }
         const r = e.target.closest('[data-r]')?.dataset.r;
-        if (r === 'prev' && i > 0) { i--; show(); }
-        if (r === 'next' && i < cards.length - 1) { i++; show(); }
-        if (r === 'one') await save(cards[i], i + 1);
-        if (r === 'all') for (let k = 0; k < cards.length; k++) { await save(cards[k], k + 1); await sleep(400); }
-        if (r === 'close' || e.target === w) closeDialog?.();
+        if (r === 'prev' && i > 0) { i--; renderView(); }
+        if (r === 'next' && i < cards.length - 1) { i++; renderView(); }
+        if (r === 'one') await save(cards[i], i + 1, true);
+        if (r === 'all') for (let k = 0; k < cards.length; k++) { await save(cards[k], k + 1, cards.length > 1); await sleep(400); }
+        if (r === 'split') { mode = 'split'; draft = [...(b.cardBreaks || [])]; renderSplit(); }
+        if (r === 'auto') { draft = []; renderSplit(); }
+        if (r === 'splitCancel') { mode = 'view'; renderView(); }
+        if (r === 'splitDone') { mode = 'view'; b.cardBreaks = draft.sort((x, y) => x - y); touch(b); i = 0; await rebuild(); }
+        if (r === 'repl') { s.cardReplaceOn = !s.cardReplaceOn; saveSettings(); await rebuild(); }
+        if (r === 'close' || (e.target === w && mode === 'view')) closeDialog?.();
     });
 }
 
