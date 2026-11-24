@@ -900,6 +900,7 @@ function layoutCard(g, f, b, size, withPair, breaks = []) {
                     ...r, justify, size: sz, lh: sz * 1.7, color, head: ri === 0,
                     gap: ri === 0 && li === 0 ? (pi === 0 ? firstGap : sz * 0.9) : 0,
                     force: isMain && ri === 0 && li === 0 && pi > 0 && breaks.includes(pi),
+                    pstart: isMain && ri === 0 && li === 0, pi: isMain ? pi : null,
                 }));
             });
         });
@@ -996,6 +997,8 @@ async function buildCards(src) {
             const t = `${i + 1} / ${pages.length}`;
             g.fillText(t, CARD.W - CARD.M - g.measureText(t).width, H - CARD.FOOT + 70);
         }
+        // which main-text paragraphs start on this card (for moving page boundaries)
+        cv.stbm = { starts: pg.rows.filter(r => r.pstart).map(r => r.pi), firstStart: pg.rows[0]?.pstart ? pg.rows[0].pi : null };
         return cv;
     });
 }
@@ -1005,7 +1008,10 @@ async function showCard(b) {
     let cards = await buildCards(b);
     let i = 0;
     let mode = 'view';
-    let draft = [];
+    // ↓: push this card's last paragraph to the next card. ↑: pull the next card's first paragraph back.
+    const canPush = () => { const m = cards[i]?.stbm; return !!m && m.starts.some(pi => pi > 0 && pi !== m.firstStart); };
+    const canPull = () => { const n = cards[i + 1]?.stbm; return !!n && n.firstStart != null && (b.cardBreaks || []).includes(n.firstStart); };
+    const setBreaks = async (list) => { b.cardBreaks = [...new Set(list)].filter(k => k > 0).sort((x, y) => x - y); touch(b); cards = await buildCards(b); renderView(); };
     const w = dialog('<div class="stbm-card-body"></div>');
     const body = w.querySelector('.stbm-card-body');
     if (!Array.isArray(s.cardReplace)) s.cardReplace = [];
@@ -1017,24 +1023,11 @@ async function showCard(b) {
         body.innerHTML = `<div class="stbm-card-wrap"></div>
           <div class="stbm-acts is-end">${multi ? `<button type="button" class="stbm-tx" data-r="prev" aria-label="이전 장">‹</button><span class="stbm-pg">${i + 1} / ${cards.length}</span><button type="button" class="stbm-tx" data-r="next" aria-label="다음 장">›</button>` : ''}
             <span class="stbm-sp"></span>
-            ${splitParas(b.text).length > 1 ? '<button type="button" class="stbm-tx" data-r="split">나누기</button>' : ''}
+            ${splitParas(b.text).length > 1 ? `<button type="button" class="stbm-tx" data-r="pull" ${canPull() ? '' : 'disabled'}>↑ 앞으로</button><button type="button" class="stbm-tx" data-r="push" ${canPush() ? '' : 'disabled'}>↓ 뒤로</button>` : ''}
             <button type="button" class="stbm-tx" data-r="repl">치환${hasRules() && s.cardReplaceOn ? ' · ' + s.cardReplace.filter(r => r && r.from).length : ''}</button>
           </div>
           <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="close">닫기</button>${multi ? '<button type="button" class="stbm-tx" data-r="one">이 장 저장</button>' : ''}<button type="button" class="stbm-tx is-strong" data-r="all">${multi ? '전체 저장' : '저장'}</button></div>`;
         body.querySelector('.stbm-card-wrap').appendChild(cards[i]);
-    };
-
-    // break editor: tap the space between paragraphs to start a new card there
-    const renderSplit = () => {
-        const paras = splitParas(cardView(b).text);
-        let html = '<div class="stbm-brk">';
-        paras.forEach((p, k) => {
-            if (k > 0) html += `<button type="button" class="stbm-brk-gap" data-gap="${k}" aria-pressed="${draft.includes(k)}" aria-label="여기서 다음 장">${draft.includes(k) ? '<span>다음 장</span>' : ''}</button>`;
-            const t = p.replace(/\s+/g, ' ').trim();
-            html += `<div class="stbm-brk-para">${esc(t.length > 60 ? t.slice(0, 60) + '…' : t)}</div>`;
-        });
-        html += '</div><div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="auto">초기화</button><span class="stbm-sp"></span><button type="button" class="stbm-tx" data-r="splitCancel">취소</button><button type="button" class="stbm-tx is-strong" data-r="splitDone">완료</button></div>';
-        body.innerHTML = html;
     };
 
     // card-only substitutions, shared by all cards (e.g. hide a character name)
@@ -1055,8 +1048,6 @@ async function showCard(b) {
 
     const save = (cv, n, multi) => new Promise(res => cv.toBlob(bl => { if (bl) download(`bookmark-${stamp()}${multi ? '-' + n : ''}.png`, bl); res(); }, 'image/png'));
     w.addEventListener('click', async (e) => {
-        const gap = e.target.closest('[data-gap]');
-        if (gap) { const k = Number(gap.dataset.gap); draft = draft.includes(k) ? draft.filter(x => x !== k) : [...draft, k]; renderSplit(); return; }
         const del = e.target.closest('[data-rdel]');
         if (del) { s.cardReplace.splice(Number(del.dataset.rdel), 1); saveSettings(); renderRepl(); return; }
         const r = e.target.closest('[data-r]')?.dataset.r;
@@ -1064,10 +1055,17 @@ async function showCard(b) {
         if (r === 'next' && i < cards.length - 1) { i++; renderView(); }
         if (r === 'one') await save(cards[i], i + 1, true);
         if (r === 'all') for (let k = 0; k < cards.length; k++) { await save(cards[k], k + 1, cards.length > 1); await sleep(400); }
-        if (r === 'split') { mode = 'split'; draft = [...(b.cardBreaks || [])]; renderSplit(); }
-        if (r === 'auto') { draft = []; renderSplit(); }
-        if (r === 'splitCancel') { mode = 'view'; renderView(); }
-        if (r === 'splitDone') { mode = 'view'; b.cardBreaks = draft.sort((x, y) => x - y); touch(b); i = 0; await rebuild(); }
+        if (r === 'push' && canPush()) {
+            const m = cards[i].stbm, n = cards[i + 1]?.stbm;
+            const last = m.starts.filter(pi => pi > 0 && pi !== m.firstStart).pop();
+            const merged = n && n.firstStart != null ? (b.cardBreaks || []).filter(k => k !== n.firstStart) : (b.cardBreaks || []);
+            await setBreaks([...merged, last]);
+        }
+        if (r === 'pull' && canPull()) {
+            const n = cards[i + 1].stbm;
+            const rest = n.starts.find(pi => pi > n.firstStart);
+            await setBreaks([...(b.cardBreaks || []).filter(k => k !== n.firstStart), ...(rest != null ? [rest] : [])]);
+        }
         if (r === 'repl') { mode = 'repl'; if (!s.cardReplace.length) s.cardReplace.push({ from: '', to: '' }); renderRepl(); body.querySelector('.stbm-in')?.focus(); }
         if (r === 'rrAdd') { s.cardReplace.push({ from: '', to: '' }); renderRepl(); [...body.querySelectorAll('[data-rf="from"]')].pop()?.focus(); }
         if (r === 'rrToggle') { s.cardReplaceOn = !s.cardReplaceOn; saveSettings(); renderRepl(); }
