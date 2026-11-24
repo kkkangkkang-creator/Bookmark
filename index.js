@@ -9,6 +9,7 @@ const BUBBLE_ID = 'llm-pl-bubble'; // LLM Translator "paragraph original" bubble
 
 const defaultSettings = Object.freeze({
     enabled: true,
+    askPair: true,          // after saving from a translated message, offer the original paragraph
     entry: 'both',          // 'input' | 'wand' | 'both'
     view: 'thread',         // 'thread' | 'blog'
     font: 'pretendard',
@@ -351,6 +352,13 @@ async function onSelPopClick(e) {
     lastSavedId = b.id;
     touch(b);
     toast('success', '북마크에 저장했어요');
+    if (info.source === 'chat' && S().askPair) {
+        const orig = findOriginal(info);
+        if (orig) {
+            const t = await askPairDialog(orig);
+            if (t) { b.pair = { text: t, kind: '원문', para: null, mesId: info.mesId }; touch(b); }
+        }
+    }
     if (a === 'memo') { ui.editing = b.id; ui.open.add(b.id); if (ui.tab === 'set') ui.tab = 'all'; openPanel(); }
     else if (panelOpen) render();
 }
@@ -434,6 +442,55 @@ function mountMessageButton() {
     const html = '<div title="메시지 전체 북마크" class="mes_button stbm-mes-btn fa-regular fa-bookmark"></div>';
     const targets = [document.querySelector('#message_template .extraMesButtons'), ...document.querySelectorAll('#chat .mes .extraMesButtons')];
     for (const t of targets) if (t && !t.querySelector('.stbm-mes-btn')) t.insertAdjacentHTML('afterbegin', html);
+}
+
+// ---------------------------------------------------------------- original lookup for translated messages
+const nonEmptyLines = (t) => String(t || '').split('\n').map(l => l.trim()).filter(Boolean);
+const stripMd = (l) => l.replace(/\*+/g, '').replace(/^#+\s*/, '').replace(/^>\s*/, '').trim();
+
+// Same paragraph(s) of the original when counts match; otherwise a proportional guess widened by one each side.
+function findOriginal(info) {
+    const msg = ctx().chat?.[info.mesId];
+    const raw = String(msg?.mes || '');
+    const shown = info.container?.innerText || '';
+    if (!raw.trim() || !shown.trim() || squash(shown) === squash(raw)) return null;
+    const d = nonEmptyLines(shown);
+    const o = nonEmptyLines(raw).map(stripMd).filter(Boolean);
+    if (!d.length || !o.length) return null;
+    const sel = nonEmptyLines(info.text);
+    const find = (needle, from) => {
+        const key = squash(needle).slice(0, 20);
+        if (!key) return -1;
+        for (let k = Math.max(0, from); k < d.length; k++) if (squash(d[k]).includes(key)) return k;
+        return -1;
+    };
+    let s0 = find(sel[0], 0);
+    if (s0 < 0) s0 = 0;
+    let e0 = sel.length > 1 ? find(sel[sel.length - 1], s0) : s0;
+    if (e0 < 0) e0 = s0;
+    let a, z;
+    if (d.length === o.length) { a = s0; z = e0; }
+    else {
+        a = Math.floor(s0 * o.length / d.length) - 1;
+        z = Math.ceil((e0 + 1) * o.length / d.length) - 1 + 1;
+    }
+    a = Math.max(0, a); z = Math.min(o.length - 1, Math.max(a, z));
+    return o.slice(a, z + 1).join('\n\n');
+}
+
+function askPairDialog(text) {
+    return new Promise(resolve => {
+        const w = dialog(`<p class="stbm-dlg-title">원문 연결</p>
+          <textarea class="stbm-pair-edit" rows="${Math.min(12, Math.max(4, text.split('\n').length + 2))}" aria-label="원문">${esc(text)}</textarea>
+          <div class="stbm-acts is-end"><button type="button" class="stbm-tx" data-r="0">건너뛰기</button><button type="button" class="stbm-tx is-strong" data-r="1">연결</button></div>`);
+        const ta = w.querySelector('textarea');
+        const done = (v) => { if (w.isConnected) w.remove(); closeDialog = null; resolve(v); };
+        closeDialog = () => done(null);
+        w.addEventListener('click', (e) => {
+            const r = e.target.closest('[data-r]');
+            if (r) done(r.dataset.r === '1' ? (ta.value.trim() || null) : null);
+        });
+    });
 }
 
 // ---------------------------------------------------------------- link mode bar
@@ -631,6 +688,7 @@ function settingsHtml() {
     return `<div class="stbm-set">
       <h3>기본</h3>
       <div class="stbm-row"><label for="stbm-on">드래그 저장</label><input type="checkbox" class="stbm-chk" id="stbm-on" data-k="enabled" ${s.enabled ? 'checked' : ''}></div>
+      <div class="stbm-row"><label for="stbm-askpair">원문 연결 묻기</label><input type="checkbox" class="stbm-chk" id="stbm-askpair" data-k="askPair" ${s.askPair ? 'checked' : ''}></div>
       <div class="stbm-row"><label for="stbm-entry">버튼 위치</label><select class="stbm-select" id="stbm-entry" data-k="entry">${opt('input', '전송 버튼 옆', s.entry)}${opt('wand', '요술봉 메뉴', s.entry)}${opt('both', '둘 다', s.entry)}</select></div>
       <h3>보기</h3>
       <div class="stbm-row"><label for="stbm-font">글꼴</label><select class="stbm-select" id="stbm-font" data-k="font">${Object.entries(FONTS).map(([k, f]) => opt(k, f.label, s.font)).join('')}</select></div>

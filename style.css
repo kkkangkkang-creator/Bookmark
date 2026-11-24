@@ -269,3 +269,12 @@ body.stbm-open #stbm-panel {
 #stbm-dialog input.stbm-in { flex: 1; min-width: 0; margin: 0; padding: 3px 0; font: inherit; font-size: 13px; color: var(--stbm-ink); background: transparent; border: 0; border-bottom: 1px solid var(--stbm-rule); border-radius: 0; box-shadow: none; }
 #stbm-dialog input.stbm-in:focus { border-bottom-color: var(--stbm-ink); outline: none; }
 #stbm-dialog .stbm-arrow { color: var(--stbm-ink-3); flex: none; }
+
+/* original-link prompt */
+#stbm-dialog .stbm-dlg-title { margin: 0 0 8px; font-size: 13px; color: var(--stbm-ink-2); }
+#stbm-dialog textarea.stbm-pair-edit {
+    display: block; width: 100%; box-sizing: border-box; margin: 0 0 12px; padding: 8px 0;
+    font-family: var(--stbm-read-font); font-size: calc(var(--stbm-read-size) * .9); line-height: var(--stbm-read-lh);
+    color: var(--stbm-ink); background: transparent; border: 0; border-top: 1px solid var(--stbm-rule); border-bottom: 1px solid var(--stbm-ink);
+    border-radius: 0; box-shadow: none; resize: vertical; max-height: 55vh;
+}
